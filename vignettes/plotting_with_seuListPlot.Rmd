@@ -1,20 +1,17 @@
-# `seurat_helpers` tips and code snippets
-
-## Preprocessing
 
 
 ## Plotting
-### Spatial plotting with `visListPlot()`
-I tend to work with all of my Seurat objects in a `list()`, especially when working with Visium data. This keeps things tidy and also means I don't have to remember (or come up with...) variable names for every object individually. Another habit I have is to add the spatial dimensions for each spot/bead barcode into the Seurat object as a `reduction`. This allows me to use standard Seurat plotting functions like `DimPlot` (for categorical data) or `FeaturePlot()` (for continuous data). `visListPlot()` is a wrapper function that takes a list of Seurat objects and features, and generates a tidy grid of plots. I have added in features that I needed like maintaining the same color scale across all samples, and/or all features. Here are some examples of how to use it:
+### Spatial plotting with `seuListPlot()`
+I tend to work with all of my Seurat objects in a `list()`, especially when working with Visium data. This keeps things tidy and also means I don't have to remember (or come up with...) variable names for every object individually. Another habit I have is to add the spatial dimensions for each spot/bead barcode into the Seurat object as a `reduction`. This allows me to use standard Seurat plotting functions like `DimPlot` (for categorical data) or `FeaturePlot()` (for continuous data). `seuListPlot()` is a wrapper function that takes a list of Seurat objects and features, and generates a tidy grid of plots. I have added in features that I needed like maintaining the same color scale across all samples, and/or all features. Here are some examples of how to use it:
 
 #### Plotting gene expression data:
-```
+```{r}
 tmp.feat <- c( # Features you want to plot
   "mmu-miR-1a-3p",
   "mmu-miR-206-3p"
 )
 
-visListPlot(
+seuListPlot(
   skm.list,                             # List of 4 skeletal muscle samples (from our STRS paper!)
   sample.titles = c(                    # Vector of sample titles
     "Uninjured", "2dpi", "5dpi","7dpi"
