@@ -447,6 +447,7 @@ addSpatialLocation <- function(
   cb_prefix=NULL, # prefix on cell barcodes; useful if cells have been merged/renamed
   loupe.json=NULL, # path to a .json file which contains the absolute spatial position (TXG Visium data only)
   reduction.name = "space",
+  scale.factor = 1, # Factor to multiply the spatial coordinates by; useful for pixel-to-unit transformations
   assay=NULL,
   verbose=F
 ){
@@ -474,9 +475,15 @@ addSpatialLocation <- function(
     return(SEU)
   }
   
+  if(scale.factor != 1){
+    if(verbose)(message(paste0("Scaling coordinates by a factor of ", scale.factor)))
+    bc.coords$X <- bc.coords$X * scale.factor
+    bc.coords$Y <- bc.coords$Y * scale.factor
+  }
+
   #Add prefix to whitelist, if required
   if(!is.null(cb_prefix)){
-    if(verbose)(message(paste0()))
+    if(verbose)(message(paste0("Adding ", cb_prefix, " as a prefix to barcodes")))
     rownames(bc.coords) <- paste0(cb_prefix, rownames(bc.coords))
   }
   
@@ -485,7 +492,7 @@ addSpatialLocation <- function(
   
   if(verbose){
     message(paste0(
-      table(bcs %in% rownames(bc.coords))["TRUE"], " out of ", length(bcs), " barcodes found in whitelist..."
+      table(bcs %in% rownames(bc.coords))["TRUE"], " out of ", length(bcs), " barcodes found in whitelist"
     ))
   }
 

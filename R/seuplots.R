@@ -6,6 +6,7 @@
 #############################################################################
 ## QC plots  ----------------------------------------------------------------
 
+# Sorted scatter plot showing the number of unique molecules (UMIs) captured in each cell/spot/bead/etc.
 kneePlot <- function(
     SEU,
     nUMI = "nCount_STAR", #nUMIs metadata column
