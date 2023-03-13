@@ -209,15 +209,16 @@ seuListPlot <- function(
           if(FEAT %in% colnames(SEU@meta.data)){
             return(
               max(
-                SEU@meta.data[[FEAT]],
+                SEU@meta.data[[FEAT]][SEU@meta.data[[FEAT]] < Inf] ,
                 na.rm = TRUE
               )
             )
             
           }else if(FEAT %in% Features(SEU, assay=ASS)){
+            tmp = GetAssayData(SEU,assay=ASS,slot=SLOT)[FEAT,]
             return(
               max(
-                GetAssayData(SEU,assay=ASS,slot=SLOT)[FEAT,],
+                tmp[tmp < Inf],
                 na.rm = TRUE
               )
             )
