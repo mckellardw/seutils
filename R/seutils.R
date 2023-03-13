@@ -354,8 +354,61 @@ changeAssayNames <- function(
   return(SEU)
 }
 
+
+# Split Assay into multiple Assays based on gene biotype, or other feature metadata
+#TODO - finish building/rebuilding Seurat objects/assays and fix return()s
+splitAssay <- function(
+  SEU,
+  assay=NULL, # Assay to be chopped up
+  new.assay.names=NULL, # Vector of assay names
+  feature.labels=NULL, # Vector of labels which are used to chop up the Assay
+  return.new.seurat=FALSE, #Whether or not to return a fresh Seurat object (memory saving feature); all meta.data is transerred over
+  verbose=F
+){
+  require(Seurat)
+
+  # param checks
+  if(is.null(feature.labels)){
+    message("Need labels to split Assay by!")
+  }
+  if(is.null(assay)){
+    assay <- SEU@active.assay
+    if(verbose){message(paste0("Using ", assay, " as `assay`..."))}
+  }
+
+  #Check if features are same length as labels
+  if(length(Features(SEU,assay=assay)) != length(feature.labels)){
+    message("Features and feature labels are different lengths!")
+
+    if(return.new.seurat){
+      return(NULL)
+    }else{
+      return(SEU)
+    }
+  }
+
+  # Extract matrix, and split based on unique labels in `feature.labels`
+  mat <- GetAssayData(
+    SEU, 
+    assay=assay, 
+    slot="counts"
+  ) 
+
+  split.list <- list()
+  for(lab in unique(feature.labels)){
+    split.list[[lab]] <- mat[feature.labels == lab, ]
+  }
+
+  # Return new assay(s)!
+  if(return.new.seurat){
+      return(NULL)
+    }else{
+      return(SEU)
+    }
+}
+
+
 # Collapse cell/nuclei/spot counts for multimapped genes - these are features with a period ("\\.") in their name
-#TODO: parallelize!
 collapseMultimappers <- function(
   SEU,
   assay=NULL,
@@ -439,16 +492,20 @@ collapseMultimappers <- function(
   return(SEU)
 }
 
+
 # Add spatial location for each cell/spot/bead in a Seurat object, given a whitelist of barcods/locations (X- & Y- coordinates)
 #TODO: generalize whitelist formatting/reading in; add option for passing vector instead of file
+#TODO: finish `as.fov` for better seurat handling
 addSpatialLocation <- function(
   SEU,
-  whitelist="~/txg_snake/resources/whitelists/visium-v1_coordinates.txt",
-  cb_prefix=NULL, # prefix on cell barcodes; useful if cells have been merged/renamed
+  bc_map="~/txg_snake/resources/whitelists/visium-v1_coordinates.txt",
+  bc_prefix=NULL, # prefix on cell barcodes; useful if cells have been merged/renamed
   loupe.json=NULL, # path to a .json file which contains the absolute spatial position (TXG Visium data only)
   reduction.name = "space",
-  scale.factor = 1, # Factor to multiply the spatial coordinates by; useful for pixel-to-unit transformations
+  scale.factor = 1, # Factor to **multiply** the spatial coordinates by; useful for pixel-to-unit transformations
   assay=NULL,
+  as.fov=F, # Whether to add the coordinates as an `FOV`; needed for spatially-aware analyses w/ Seurat
+  as.reduction=T, # Whether to add the spatial location as a reduction; useful for plotting
   verbose=F
 ){
   require(Seurat)
@@ -461,9 +518,9 @@ addSpatialLocation <- function(
   }
 
   # Read in whitelist coordinates
-  if(file.exists(whitelist)){
+  if(file.exists(bc_map)){
   bc.coords <- read.table(
-    whitelist,
+    bc_map,
     row.names = 1,
     col.names = c(
       "X",
@@ -482,9 +539,9 @@ addSpatialLocation <- function(
   }
 
   #Add prefix to whitelist, if required
-  if(!is.null(cb_prefix)){
-    if(verbose)(message(paste0("Adding ", cb_prefix, " as a prefix to barcodes")))
-    rownames(bc.coords) <- paste0(cb_prefix, rownames(bc.coords))
+  if(!is.null(bc_prefix)){
+    if(verbose)(message(paste0("Adding ", bc_prefix, " as a prefix to barcodes")))
+    rownames(bc.coords) <- paste0(bc_prefix, rownames(bc.coords))
   }
   
   # Build reduction based on spot barcodes & whitelist
@@ -507,24 +564,37 @@ addSpatialLocation <- function(
   colnames(tmp.mat) <- paste0(reduction.name, 1:2)
   rownames(tmp.mat) <- bcs
 
-  if(!is.null(loupe.json)){
-    #TODO
-    #read json in as a dataframe/mat
+  # Add spatial coordinates as a `reduction`
+  if(as.reduction){
+    # Add reduc to seurat obj
+    SEU[[reduction.name]] <- CreateDimReducObject(
+      embeddings=as.matrix(tmp.mat),
+      key = paste0(reduction.name,"_"),
+      assay=assay,
+      global=TRUE
+    )
     
-    # replace the entries in `tmp.mat` (relative positions) with the absolute positions
+    if(!is.null(loupe.json)){
+      #TODO
+      #read json in as a dataframe/mat
+      subsetLoupeJson(
+        SEU = SEU,
+        reduction = reduction.name,
+        json_path = loupe.json,
+        verbose = verbose
+      )
+      # replace the entries in `tmp.mat` (relative positions) with the absolute positions
+    }
   }
   
+  # Add spatial coordinates as a `fov`
+  if(as.fov){
+    #TODO
+  }
   
-  # Add reduc to seurat obj
-  SEU[[reduction.name]] <- CreateDimReducObject(
-    embeddings=as.matrix(tmp.mat),
-    key = paste0(reduction.name,"_"),
-    assay=assay,
-    global=TRUE
-  )
-
   return(SEU)
 }
+
 
 # Rotate spatial coordinates clockwise 90 degrees, N times 
 rotateClockwise90N <- function(
@@ -551,6 +621,7 @@ rotateClockwise90N <- function(
   
   return(SEU)
 }
+
 
 # Remove spots/beads that have fewer than `K` neighbors within `D` units of another spot/bead
 removeSpatialSinglets <- function(
@@ -661,6 +732,7 @@ spatialRel2Abs <- function(
   return(SEU)
 }
 
+
 # Subset Visium Seurat object based on spots manually selected via loupe browser
 subsetLoupeJson <- function(
   SEU,
@@ -756,7 +828,6 @@ npcs <- function(
 }
 
 
-
 # Preprocessing wrapper function
 #   (1) NormalizeData(SEU) %>% FindVariableFeatures() %>% ScaleData() %>% RunPCA()
 #   (2) FindNeighbors, RunUMAP (optional), FindClusters (optional)
@@ -766,6 +837,7 @@ seuPreProcess <- function(
   n.pcs=50,
   res=0.8,
   nVarFeatures = 2000,
+  run.clustering = F,
   run.umap=F,
   verbose=F
 ){
@@ -791,28 +863,46 @@ seuPreProcess <- function(
     verbose = verbose
   ) %>% ScaleData(
     assay = assay
-  ) %>% RunPCA(
-    assay = assay,
-    reduction.name = pca.name,
-    reduction.key = pca.key,
-    verbose = verbose,
-    npcs = n.pcs
-  )
-
-  #find num pcs to use (for NN graph, UMAP etc)
-  n.pcs.use = npcs(
-    SEU=SEU,
-    var.total = 0.95,
-    reduction = pca.name
-  )
-
-  SEU <- FindNeighbors(
-    SEU,
-    reduction = pca.name,
-    dims = 1:n.pcs.use,
-    force.recalc = TRUE,
-    verbose = verbose
-  )
+  ) 
+  
+  if(run.clustering){
+    SEU = RunPCA(
+      SEU,
+      assay = assay,
+      reduction.name = pca.name,
+      reduction.key = pca.key,
+      verbose = verbose,
+      npcs = n.pcs
+    )
+    
+    #find num pcs to use (for NN graph, UMAP etc)
+    n.pcs.use = npcs(
+      SEU=SEU,
+      var.total = 0.95,
+      reduction = pca.name
+    )
+    
+    SEU <- FindNeighbors(
+      SEU,
+      reduction = pca.name,
+      dims = 1:n.pcs.use,
+      force.recalc = TRUE,
+      verbose = verbose
+    )
+    
+    if(length(res)<1){
+      message("Need resolution parameter to run clustering...\n Returning Seurat object without clusters.")
+    }else{
+      for(tmp.res in res){
+        SEU <- FindClusters(
+          object = SEU,
+          resolution = tmp.res,
+          graph.name = paste0(assay,"_snn"),
+          verbose = verbose
+        )
+      }
+    }
+  }
   
   if(run.umap){
     umap.name = paste0('umap_', assay)
@@ -827,18 +917,6 @@ seuPreProcess <- function(
     SEU@reductions[[umap.name]]@misc$n.pcs.used <- n.pcs.use
   }
   
-  if(length(res)<1){
-    message("Need resolution parameter to run clustering...\n Returning Seurat object without clusters.")
-  }else{
-    for(tmp.res in res){
-      SEU <- FindClusters(
-        object = SEU,
-        resolution = tmp.res,
-        graph.name = paste0(assay,"_snn"),
-        verbose = verbose
-      )
-    }
-  }
   
   gc()
   
@@ -859,10 +937,14 @@ seuPreProcess <- function(
 #     newName:    string of the new idents name
 #
 AddCellTypeIdents <- function(
-  SEU=NULL, old.name, new.name=NULL, new.idents, verbose=FALSE
+    SEU=NULL, 
+    old.name, 
+    new.name=NULL, 
+    new.idents, 
+    verbose=FALSE
 ){
   old.idents = as.vector(names(table(SEU[[old.name]])))
-
+  
   if(is.null(new.name)){
     cat("**Need a new.name for the new idents**\n")
   }else{
@@ -873,9 +955,8 @@ AddCellTypeIdents <- function(
       if(verbose){cat("Done!\n", sep = "")}
     }
   }
-
-   return(SEU)
-
+  
+  return(SEU)
 }
 
 
@@ -945,6 +1026,7 @@ RunDoubletFinder <- function(
   }
   
 }
+
 
 # Borrowed/adapted from the Marioni Lab, DropletUtils package (https://rdrr.io/github/MarioniLab/DropletUtils/src/R/write10xCounts.R)
 #   (Had R version issues getting it to work as a dependency)
@@ -1022,6 +1104,7 @@ write_sparse <- function(
   return(NULL)
 }
 
+
 # TODO- haven't used this in a while, make sure it works...
 # calculate entropy across groups in a seurat object
 #     output: returns data.frame ("group.by" rows by 1 col)
@@ -1076,6 +1159,7 @@ seu_entropy <- function(
   return(entropy.out)
 }
 
+# TODO- haven't used this in a while, make sure it works...
 # Calculate silhouette
 seu_silhouette <- function(
   SEU,
@@ -1146,7 +1230,7 @@ ConvertHumanGeneListToMM <- function(x){
 }
 
 # Add gene biotype percentages to a seurat object, given a biomaRt object.
-seu_biotypes <- function(
+seu_biotypes_pct <- function(
   SEU,
   biomart=NULL, # biomaRt or data.frame containing gene biotypes
   gene.colname="GeneSymbol",
@@ -1207,6 +1291,89 @@ seu_biotypes <- function(
   return(SEU)
 }
 
+# Compute gene biotype diversity on a seurat object, given a biomaRt object.
+## Uses `vegan::diversity`
+seu_biotypes_div <- function(
+    SEU,
+    biomart=NULL, # biomaRt or data.frame containing gene biotypes
+    gene.colname="GeneSymbol",
+    biotype.colname="Biotype",
+    add.as=c("metadata","assay"), # how percent features should be added
+    assay="RNA",
+    slot="counts",
+    index = c("shannon", "simpson", "invsimpson"),
+    prefix=NULL,
+    verbose=TRUE
+){
+  require(vegan)
+  
+  index = index[1]
+  if(!index %in% c("shannon", "simpson", "invsimpson")){
+    message("Given `index` is not supported by `vegan::diversity`")
+    return(SEU)
+  }
+  
+  if(is.null(biomart)){
+    message("Need a list of gene biotypes! Nothing done.")
+    return(SEU)
+  }
+  
+  if(is.null(prefix)){
+    prefix = paste0(index,".")
+  }
+  
+  if(add.as[1]=="assay"){
+    message("add.as='assay' is not yet implemented")
+    new.assay.name = paste0(assay,".biotypes")
+    return(SEU)
+  }
+  
+  if(verbose){message(paste0("Adding gene biotype percentage values as ", add.as, " ..."))}
+  
+  biotypes = unique(biomart[[biotype.colname]])
+  for(biotype in biotypes){
+    tmp.mart =  biomart[biomart[[biotype.colname]]==biotype,] #subset out current gene biotype
+    tmp.feat = unique( #get unique gene names which are present in the SEU object
+      tmp.mart[[gene.colname]][tmp.mart[[gene.colname]] %in% Features(SEU, assay=assay)]
+    )
+    tmp.mat <- GetAssayData(
+      SEU,
+      assay = assay,
+      slot = slot
+    )[tmp.feat,]
+    
+    # if(slot=="counts"){ # normalize prior to computing diversity
+    #   if(verbose){message("Normalizing counts...")}
+    #   tmp.mat <- apply(
+    #     tmp.mat,
+    #     MARGIN = 2, 
+    #     FUN = function(X) X/sum(X)
+    #   )
+    # }
+    
+    if(length(tmp.feat)==0){
+      if(verbose){message(paste0("  No ", biotype, " genes found..."))}
+    }else{
+      # Calculate Shannon diversity index for each column
+      tmp.div <- apply(
+        tmp.mat,
+        MARGIN = 2, 
+        FUN = diversity, 
+        index = index
+      )
+      
+      if(add.as[1]=="metadata"){
+        SEU[[paste0(prefix, biotype)]] <- tmp.div
+      }else if(add.as[1] == "assay"){
+        #TODO
+        message("Not implemented yet...")
+      }else{
+        message("`add.as` option not found... Try again.")
+      }
+    }
+  }
+  return(SEU)
+}
 ########################################
 ## Other helpers...
 ########################################
