@@ -45,7 +45,7 @@ kneePlot <- function(
     )
   
   if(!is.null(umi.threshold) & is.numeric(umi.threshold)){
-    cell.count = sort(table( SEU[[nUMI]] > umi.threshold )) # nCells in cell.count[1]
+    cell.count = sort(table( SEU[[nUMI]] >= umi.threshold )) # nCells in cell.count[1]
     
     out.plot +
       geom_hline(
@@ -302,7 +302,7 @@ seuListPlot <- function(
             legend.title = element_text(size=font.size,face="bold", hjust=0.5),
             legend.text = element_text(size=font.size,face="bold")
           )
-        #TODO
+        #TODO- note, x.window is passed per seurat object, but these plots are drawn by the feature
         # lims(
         #   x=x.window[[i]],
         #   y=y.window[[i]]
