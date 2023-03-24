@@ -211,6 +211,7 @@ addNewAssayMtx <- function(
   cells=NULL,
   features=NULL,
   current.cells=T, #whether to only add counts for current cells/barcodes in the Seurat object
+  normalize.col=NULL, # metadata column used to normalize counts (useful for splitting counts across biotypes/etc)
   
   # ReadMtx() params
   cell.column = 1,
@@ -221,6 +222,7 @@ addNewAssayMtx <- function(
   
   # CreateAssayObject() params
   min.cells=1, 
+  
   
   verbose=F
 ){
@@ -261,6 +263,7 @@ addNewAssayMtx <- function(
     }
   }
   
+  #TODO: comment
   if(current.cells){
     tmp.mat <- tmp.mat[,keep.cells]
   }else{
@@ -296,10 +299,23 @@ addNewAssayMtx <- function(
     tmp.mat <- tmp.mat[,Cells(SEU)]
   }
   
+  
   SEU[[assay]] <- CreateAssayObject(
     counts = tmp.mat,
     min.cells = min.cells
   )
+  
+  # Custom normalization
+  ##TODO- add multi-column normalization (sum of columns)
+  if(!is.null(normalize.col)){
+    tmp.denominator <- SEU@meta.data[,normalize.col]
+    scale.factor <- 10000 #TODO: add as param?
+    tmp.mat.normalized <- log1p(tmp.mat/tmp.denominator*scale.factor)
+    
+    print(table(rownames(tmp.mat.normalized) %in% rownames(tmp.mat)))
+    
+    SEU[[assay]]@data <- tmp.mat.normalized
+  }
   
   return(SEU)
 }
@@ -504,6 +520,7 @@ addSpatialLocation <- function(
   reduction.name = "space",
   scale.factor = 1, # Factor to **multiply** the spatial coordinates by; useful for pixel-to-unit transformations
   assay=NULL,
+  move.to.origin=F, # set lower bounds of spatial coordinates to zero
   as.fov=F, # Whether to add the coordinates as an `FOV`; needed for spatially-aware analyses w/ Seurat
   as.reduction=T, # Whether to add the spatial location as a reduction; useful for plotting
   verbose=F
@@ -537,7 +554,13 @@ addSpatialLocation <- function(
     bc.coords$X <- bc.coords$X * scale.factor
     bc.coords$Y <- bc.coords$Y * scale.factor
   }
-
+  
+  if(move.to.origin){
+    if(verbose)(message(paste0("Moving to origin...\n")))
+    bc.coords$X <- bc.coords$X - min(bc.coords$X)
+    bc.coords$Y <- bc.coords$Y - min(bc.coords$Y)
+  }
+  
   #Add prefix to whitelist, if required
   if(!is.null(bc_prefix)){
     if(verbose)(message(paste0("Adding ", bc_prefix, " as a prefix to barcodes")))
@@ -875,17 +898,10 @@ seuPreProcess <- function(
       npcs = n.pcs
     )
     
-    #find num pcs to use (for NN graph, UMAP etc)
-    n.pcs.use = npcs(
-      SEU=SEU,
-      var.total = 0.95,
-      reduction = pca.name
-    )
-    
-    SEU <- FindNeighbors(
+    SEU = FindNeighbors(
       SEU,
       reduction = pca.name,
-      dims = 1:n.pcs.use,
+      dims = 1:n.pcs,
       force.recalc = TRUE,
       verbose = verbose
     )
@@ -894,7 +910,7 @@ seuPreProcess <- function(
       message("Need resolution parameter to run clustering...\n Returning Seurat object without clusters.")
     }else{
       for(tmp.res in res){
-        SEU <- FindClusters(
+        SEU = FindClusters(
           object = SEU,
           resolution = tmp.res,
           graph.name = paste0(assay,"_snn"),
@@ -905,18 +921,28 @@ seuPreProcess <- function(
   }
   
   if(run.umap){
+    if(!pca.name %in% Reductions(SEU)){
+      SEU = RunPCA(
+        SEU,
+        assay = assay,
+        reduction.name = pca.name,
+        reduction.key = pca.key,
+        verbose = verbose,
+        npcs = n.pcs
+      )
+    }
+    
     umap.name = paste0('umap_', assay)
     
-    SEU <- RunUMAP(
+    SEU = RunUMAP(
       SEU,
       reduction = pca.name,
-      dims = 1:n.pcs.use,
+      dims = 1:n.pcs,
       verbose = verbose,
       reduction.name=umap.name
     )
-    SEU@reductions[[umap.name]]@misc$n.pcs.used <- n.pcs.use
+    SEU@reductions[[umap.name]]@misc$n.pcs <- n.pcs
   }
-  
   
   gc()
   
@@ -1158,6 +1184,7 @@ seu_entropy <- function(
 
   return(entropy.out)
 }
+
 
 # TODO- haven't used this in a while, make sure it works...
 # Calculate silhouette
