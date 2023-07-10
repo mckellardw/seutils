@@ -130,7 +130,7 @@ seuListPlot <- function(
     alt.titles=features
   }
   
-  # Check slot, assay length(s)
+  # Check slot, assay, min.value length(s)
   if(length(assay)==1){
     assay = rep(assay,length(features))
   }else if(length(assay) != length(features)){
@@ -141,6 +141,12 @@ seuListPlot <- function(
     slot = rep(slot,length(features))
   }else if(length(slot) != length(features)){
     message("`slot` and `features` lengths don't match!")
+  }
+  
+  if(length(min.value)==1){
+    min.value = rep(min.value,length(features))
+  }else if(length(min.value) != length(features)){
+    message("`min.value` and `features` lengths don't match!")
   }
   
   # Check x.window & y.window params
@@ -202,7 +208,7 @@ seuListPlot <- function(
   
   # Get expression limits for each gene, across all datasets
   gene.lims <- mapply(
-    FUN = function(FEAT, ASS, SLOT){
+    FUN = function(FEAT, ASS, SLOT, MIN){
       out.max <- lapply(
         seu.list,
         FUN = function(SEU){
@@ -233,19 +239,20 @@ seuListPlot <- function(
         max()
       
       if(verbose){message(paste0("Using ", out.max, " as the max value for ", FEAT,"\n"))}
-      return(c(min.value, out.max))
+      return(c(MIN, out.max))
     },
     SIMPLIFY = F,
     FEAT = features,
     ASS = assay,
-    SLOT = slot
+    SLOT = slot,
+    MIN = min.value
   )
   
   # Set colormap scale to the global min/max of all features 
   if(colormap.same.scale){
     gene.lims <- lapply(
       gene.lims,
-      FUN=function(X) c(min.value, max(unlist(gene.lims)) )
+      FUN=function(X) c(min(unlist(gene.lims)), max(unlist(gene.lims)) )
     )
   }
   
@@ -545,9 +552,23 @@ seuCoMap <- function(
     slot = rep(slot,2)
   }
   
+  # Check min.value(s)
+  if(length(min.value)==1){
+    min.value = c(
+      min.value,
+      min.value,
+      do.call(comap.fxn, list(min.value, min.value))
+    )
+    if(verbose){message(paste0("min.values set to ", min.value[[3]]))}
+  }else if(length(min.value)==3){
+    # Do nothing
+  }else{
+    message("Unexpected `min.value` passed...")
+  }
+  
   # Compute co-expression values and add back to Seurat objects (as entry in meta.data)
   if(is.null(coex.name)){
-    coex.name = "coexpression.tmp.values"
+    coex.name = "coexpression"
   }
   
   maps.out <- lapply(
